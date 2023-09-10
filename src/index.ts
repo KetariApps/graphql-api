@@ -19,7 +19,6 @@ const startServer = async () => {
     process.env.NEO_PASS === undefined ||
     process.env.PORT === undefined ||
     process.env.PRODUCTION === undefined ||
-    process.env.GITHUB_ACCESS_TOKEN === undefined ||
     process.env.GITHUB_REPO_OWNER === undefined ||
     process.env.GITHUB_REPO_NAME === undefined ||
     process.env.GITHUB_TARGET_FILE_PATH === undefined
