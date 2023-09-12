@@ -1,5 +1,6 @@
-FROM node:latest
+FROM node:alpine
 WORKDIR /app
 COPY . .
 RUN npm install
+RUN npm run build
 ENTRYPOINT ["npm", "start"]
