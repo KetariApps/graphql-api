@@ -1,12 +1,12 @@
 import { Neo4jGraphQL } from "@neo4j/graphql";
-import { ApolloServer } from "apollo-server";
 import neo4j from "neo4j-driver";
 import { mergeTypeDefs } from "@graphql-tools/merge";
 import * as dotenv from "dotenv";
 import getSchemaFromGithub from "./getSchemaFromGithub";
-import errorLogger from "./logging/errorLogger";
 import requestLogger from "./logging/requestLogger";
 import { pollForSchema } from "./pollForSchema";
+import { ApolloServer } from "@apollo/server";
+import { startStandaloneServer } from "@apollo/server/standalone";
 
 const startServer = async () => {
   console.log(`[${new Date().toISOString()}] Starting server.`);
@@ -60,7 +60,6 @@ const startServer = async () => {
     );
   }
 
-  //// schema stuff
   const typeDefs = mergeTypeDefs([plaintextSchema]);
   const driver = neo4j.driver(
     process.env.NEO_URI,
@@ -71,19 +70,21 @@ const startServer = async () => {
     driver,
   });
 
-  Promise.all([neoSchema.getSchema()]).then(([schema]) => {
+  Promise.all([neoSchema.getSchema()]).then(async ([schema]) => {
     const server = new ApolloServer({
       schema,
       introspection: process.env.PRODUCTION === "FALSE",
       logger: requestLogger,
-      formatError: errorLogger,
-      context: async ({ req }) => {
-        return { req, driver };
-      },
       plugins: [
         {
           async requestDidStart(ctx) {
             ctx.logger.debug(JSON.stringify(ctx.request, null, 2));
+          },
+          async unexpectedErrorProcessingRequest({ requestContext, error }) {
+            console.error(error, JSON.stringify(requestContext, undefined, 2));
+          },
+          async invalidRequestWasReceived({ error }) {
+            console.error(error);
           },
         },
       ],
@@ -116,19 +117,20 @@ const startServer = async () => {
     process.on("SIGINT", shutdown);
     process.on("SIGTERM", shutdown);
 
-    server.listen(process.env.PORT).then(({ url }) => {
-      console.log(`🚀 Server ready at ${url}`);
-      const stopPolling = pollForSchema({
-        accessToken: process.env.GITHUB_ACCESS_TOKEN!,
-        repoName: process.env.GITHUB_REPO_NAME!,
-        repoOwner: process.env.GITHUB_REPO_OWNER!,
-        filePath: process.env.GITHUB_TARGET_FILE_PATH!,
-        interval: 300000,
-        onDiffTrue: () => {
-          stopPolling();
-          restart();
-        },
-      });
+    const { url } = await startStandaloneServer(server, {
+      listen: { port: Number(process.env.PORT) || 4000 },
+    });
+    console.log(`🚀 Server ready at ${url}`);
+    const stopPolling = pollForSchema({
+      accessToken: process.env.GITHUB_ACCESS_TOKEN!,
+      repoName: process.env.GITHUB_REPO_NAME!,
+      repoOwner: process.env.GITHUB_REPO_OWNER!,
+      filePath: process.env.GITHUB_TARGET_FILE_PATH!,
+      interval: 300000,
+      onDiffTrue: () => {
+        stopPolling();
+        restart();
+      },
     });
   });
 };
